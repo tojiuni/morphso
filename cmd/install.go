@@ -189,6 +189,13 @@ func runScriptFlow(script *hub.InstallScript, slug, version string) error {
 		}
 	}
 
+	// config 파일 존재 여부 검증
+	if installConfig != "" {
+		if _, err := os.Stat(installConfig); err != nil {
+			return fmt.Errorf("config 파일을 찾을 수 없습니다: %s", installConfig)
+		}
+	}
+
 	// 임시 파일에 스크립트 저장 후 실행
 	tmpFile, err := os.CreateTemp("", fmt.Sprintf("moso-install-%s-*.sh", slug))
 	if err != nil {
