@@ -282,8 +282,10 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 		depScript, scriptErr := client.GetInstallScript(depSlug, depVersion, strategy)
 		if scriptErr == nil {
 			if runErr := runScriptFlow(depScript, depSlug, depVersion); runErr != nil {
-				fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
-				// continue with other deps — don't abort
+				if !errors.Is(runErr, hub.ErrUserCancelled) {
+					fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
+				}
+				// skip RecordInstall on cancel or failure — continue with other deps
 			} else {
 				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
 			}
@@ -332,7 +334,7 @@ func runScriptFlow(script *hub.InstallScript, slug, version string) error {
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input == "n" || input == "no" {
 			fmt.Println("취소됨.")
-			return nil
+			return hub.ErrUserCancelled
 		}
 	}
 

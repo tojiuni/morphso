@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strings"
 
 	"github.com/tojiuni/morphso/internal/spec"
 )
@@ -61,7 +62,9 @@ func (c *Client) do(req *http.Request, out any) error {
 		return nil
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("server error: %s", resp.Status)
+		body := make([]byte, 256)
+		n, _ := resp.Body.Read(body)
+		return fmt.Errorf("server error: %s: %s", resp.Status, strings.TrimSpace(string(body[:n])))
 	}
 	if out != nil {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

@@ -7,6 +7,7 @@ import (
 
 var ErrNotFound = errors.New("package not found")
 var ErrUnauthorized = errors.New("unauthorized")
+var ErrUserCancelled = errors.New("user cancelled")
 
 type Package struct {
 	ID          string   `json:"id"`

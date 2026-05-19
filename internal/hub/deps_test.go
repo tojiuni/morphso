@@ -31,6 +31,31 @@ func makeRecord(slug, version, status string, at time.Time) hub.InstallRecord {
 	}
 }
 
+// --- compareVersion edge case tests ---
+
+func TestCompareVersion_NonNumericPart(t *testing.T) {
+	// "0-rc1" vs "0": string comparison — "0-rc1" < "0" is false ("0-" > "0"),
+	// but the key requirement is they are NOT equal (no silent zero fallback).
+	result := hub.CompareVersion("15.0-rc1", "15.0")
+	assert.NotEqual(t, 0, result, "15.0-rc1 and 15.0 must not compare as equal")
+}
+
+func TestCompareVersion_VPrefix(t *testing.T) {
+	// leading "v" stripped — v15.0 == 15.0
+	assert.Equal(t, 0, hub.CompareVersion("v15.0", "15.0"))
+}
+
+func TestCompareVersion_MissingParts(t *testing.T) {
+	// missing parts treated as "0" numeric — 1.0 == 1.0.0
+	assert.Equal(t, 0, hub.CompareVersion("1.0", "1.0.0"))
+}
+
+func TestCompareVersion_LatestVsNumeric(t *testing.T) {
+	// "latest" is non-numeric; string "latest" > "1.0" → result must be non-panic and > 0
+	result := hub.CompareVersion("latest", "1.0")
+	assert.Equal(t, 1, result, "\"latest\" > \"1.0\" by string comparison")
+}
+
 // --- BuildDependencyPlan tests ---
 
 func TestBuildDependencyPlan_NoHistory(t *testing.T) {

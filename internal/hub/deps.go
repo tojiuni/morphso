@@ -29,10 +29,10 @@ type ResourceWarning struct {
 	ShortByGB float64
 }
 
-// compareVersion compares two semver-ish version strings part by part numerically.
+// CompareVersion compares two semver-ish version strings part by part numerically.
 // Returns -1 if a < b, 0 if a == b, 1 if a > b.
 // Leading "v" prefix is stripped. Non-numeric parts fall back to string comparison.
-func compareVersion(a, b string) int {
+func CompareVersion(a, b string) int {
 	a = strings.TrimPrefix(a, "v")
 	b = strings.TrimPrefix(b, "v")
 
@@ -45,18 +45,43 @@ func compareVersion(a, b string) int {
 	}
 
 	for i := 0; i < maxLen; i++ {
-		var aNum, bNum int
+		var aPart, bPart string
 		if i < len(aParts) {
-			aNum, _ = strconv.Atoi(aParts[i])
+			aPart = aParts[i]
 		}
 		if i < len(bParts) {
-			bNum, _ = strconv.Atoi(bParts[i])
+			bPart = bParts[i]
 		}
-		if aNum < bNum {
-			return -1
-		}
-		if aNum > bNum {
-			return 1
+
+		// Missing parts (empty string from a shorter version) are treated as numeric 0.
+		aNum, aErr := strconv.Atoi(aPart)
+		bNum, bErr := strconv.Atoi(bPart)
+
+		aMissing := aPart == ""
+		bMissing := bPart == ""
+
+		if (aErr == nil || aMissing) && (bErr == nil || bMissing) {
+			// both parts are numeric (or absent — treated as 0)
+			if aMissing {
+				aNum = 0
+			}
+			if bMissing {
+				bNum = 0
+			}
+			if aNum < bNum {
+				return -1
+			}
+			if aNum > bNum {
+				return 1
+			}
+		} else {
+			// at least one part is non-numeric and non-empty: fall back to string comparison
+			if aPart < bPart {
+				return -1
+			}
+			if aPart > bPart {
+				return 1
+			}
 		}
 	}
 	return 0
@@ -97,7 +122,7 @@ func BuildDependencyPlan(deps []DependencyInfo, history []InstallRecord) []DepPl
 			continue
 		}
 
-		if compareVersion(best.Version, dep.MinVersion) >= 0 {
+		if CompareVersion(best.Version, dep.MinVersion) >= 0 {
 			plan = append(plan, DepPlanItem{Dep: dep, Action: DepSkip, InstalledVersion: best.Version})
 		} else {
 			plan = append(plan, DepPlanItem{Dep: dep, Action: DepUpdate, InstalledVersion: best.Version})
