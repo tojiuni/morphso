@@ -84,12 +84,18 @@ func (f *DeviceFlow) PollOnce(deviceCode string) (string, error) {
 
 	var payload struct {
 		AccessToken string `json:"access_token"`
+		IDToken     string `json:"id_token"`
 		Error       string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return "", fmt.Errorf("decode token response: %w", err)
 	}
 
+	// Prefer id_token (JWT) over access_token (may be opaque) so hub JWT
+	// validation succeeds without requiring token introspection.
+	if payload.IDToken != "" {
+		return payload.IDToken, nil
+	}
 	if payload.AccessToken != "" {
 		return payload.AccessToken, nil
 	}

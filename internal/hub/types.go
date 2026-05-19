@@ -30,6 +30,8 @@ type InstallRequest struct {
 	PackageSlug    string `json:"package_slug"`
 	Version        string `json:"version"`
 	Strategy       string `json:"strategy"`
+	OS             string `json:"os"`
+	Arch           string `json:"arch"`
 	InstallGroupID string `json:"install_group_id,omitempty"`
 	InstallSource  string `json:"install_source,omitempty"`
 }
@@ -62,14 +64,8 @@ type ResourceRequirements struct {
 	NeedsGPU    bool    `json:"needs_gpu"`
 }
 
-type DepPackageRef struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
 type DependencyInfo struct {
-	Package              DepPackageRef        `json:"package"`
+	Package              Package              `json:"package"`
 	MinVersion           string               `json:"min_version"`
 	Source               string               `json:"source"`
 	ResourceRequirements ResourceRequirements `json:"resource_requirements"`

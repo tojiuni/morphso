@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tojiuni/morphso/internal/config"
 	"github.com/tojiuni/morphso/internal/hub"
@@ -26,6 +27,7 @@ var (
 	installHelm     bool
 	installTemplate bool
 	installConfig   string
+	installNoDeps   bool
 )
 
 var installCmd = &cobra.Command{
@@ -44,6 +46,7 @@ func init() {
 	installCmd.Flags().BoolVar(&installHelm, "helm", false, "--strategy=helm 단축키")
 	installCmd.Flags().BoolVar(&installTemplate, "template", false, "config template을 ./<slug>.env로 저장")
 	installCmd.Flags().StringVar(&installConfig, "config", "", "커스텀 config 파일 (MOSO_CONFIG 환경변수로 주입)")
+	installCmd.Flags().BoolVar(&installNoDeps, "no-deps", false, "의존성 설치 없이 main만 설치")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -134,6 +137,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("'%s'가 설치되어 있지 않습니다. 먼저 설치하세요", req)
 	}
 
+	// 5.5. Dependency install flow
+	groupID, err := runDepsFlow(client, slug, version, strategy, s, cfg.Token != "")
+	if err != nil {
+		return err
+	}
+	if groupID == "" {
+		// User cancelled during resource warning prompt
+		return nil
+	}
+
 	// 6. Hub에서 install script 조회 → 없으면 로컬 BuildCommand fallback
 	installScript, err := client.GetInstallScript(slug, version, strategy)
 	if err == nil {
@@ -141,7 +154,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if cfg.Token != "" {
-			_, _ = client.RecordInstall(slug, version, strategy, "", "user")
+			_, _ = client.RecordInstall(slug, version, strategy, groupID, "user")
 		}
 		return nil
 	}
@@ -156,10 +169,144 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("설치 실패: %w", err)
 	}
 	if cfg.Token != "" {
-		_, _ = client.RecordInstall(slug, version, strategy, "", "user")
+		_, _ = client.RecordInstall(slug, version, strategy, groupID, "user")
 	}
 	fmt.Printf("\n✓ '%s' 설치 완료!\n", slug)
 	return nil
+}
+
+// newInstallGroupID generates a fresh UUID for grouping related installs.
+func newInstallGroupID() string {
+	return uuid.New().String()
+}
+
+// computeTotals sums memory and disk requirements for all non-skipped plan items
+// plus the main package's requirements.
+func computeTotals(plan []hub.DepPlanItem, mainDep hub.DependencyInfo) (memGB, diskGB float64) {
+	memGB = mainDep.ResourceRequirements.MinMemoryGB
+	diskGB = mainDep.ResourceRequirements.MinDiskGB
+	for _, item := range plan {
+		if item.Action == hub.DepSkip {
+			continue
+		}
+		memGB += item.Dep.ResourceRequirements.MinMemoryGB
+		diskGB += item.Dep.ResourceRequirements.MinDiskGB
+	}
+	return
+}
+
+// runDepsFlow fetches dependencies, builds a plan, checks resources,
+// shows the plan to the user, confirms, then installs deps sequentially.
+// Returns the install group ID to use for the main package install.
+// If no deps or --no-deps, returns a fresh group ID with no installations.
+// Returns "", nil to signal user cancellation.
+func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spec, hasToken bool) (groupID string, err error) {
+	groupID = newInstallGroupID()
+
+	if installNoDeps {
+		return groupID, nil
+	}
+
+	// Fetch dependencies
+	depResp, err := client.GetDependencies(slug)
+	if errors.Is(err, hub.ErrNotFound) {
+		return groupID, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if len(depResp.Dependencies) == 0 {
+		return groupID, nil
+	}
+
+	// Fetch install history (best-effort: ignore errors)
+	var history []hub.InstallRecord
+	if hasToken {
+		history, _ = client.GetInstalls()
+	}
+
+	// Build plan
+	plan := hub.BuildDependencyPlan(depResp.Dependencies, history)
+
+	// Build mainDep DependencyInfo for resource check
+	mainDep := hub.DependencyInfo{Package: hub.Package{Slug: slug}}
+
+	// Check resources
+	warnings := hub.CheckResources(plan, mainDep, s.MemoryFreeGB, s.DiskFreeGB)
+
+	// Print plan
+	fmt.Printf("\nDependencies:\n")
+	for _, item := range plan {
+		switch item.Action {
+		case hub.DepSkip:
+			fmt.Printf("  ✓ %-20s %s (설치됨, skip)\n", item.Dep.Package.Slug, item.InstalledVersion)
+		case hub.DepUpdate:
+			fmt.Printf("  ↑ %-20s %s → %s (업데이트)\n", item.Dep.Package.Slug, item.InstalledVersion, item.Dep.MinVersion)
+		case hub.DepInstall:
+			fmt.Printf("  + %-20s %s (신규 설치)\n", item.Dep.Package.Slug, item.Dep.MinVersion)
+		}
+	}
+
+	// Print resource summary
+	totalMemNeed, totalDiskNeed := computeTotals(plan, mainDep)
+	fmt.Printf("\nRequired:  RAM %.0fGB  Disk %.0fGB\n", totalMemNeed, totalDiskNeed)
+	fmt.Printf("Available: RAM %.0fGB  Disk %.0fGB\n", s.MemoryFreeGB, s.DiskFreeGB)
+
+	// Print warnings
+	for _, w := range warnings {
+		fmt.Printf("⚠ %s %.0fGB 부족합니다.\n", w.Kind, w.ShortByGB)
+	}
+
+	// Confirm if warnings exist and not --yes
+	if len(warnings) > 0 && !installYes {
+		fmt.Print("계속 진행할까요? [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(strings.ToLower(input))
+		if input != "y" && input != "yes" {
+			fmt.Println("취소됨.")
+			return "", nil // signal cancel
+		}
+	}
+
+	// Install deps sequentially (DepInstall and DepUpdate only)
+	for _, item := range plan {
+		if item.Action == hub.DepSkip {
+			continue
+		}
+		depSlug := item.Dep.Package.Slug
+		depVersion := item.Dep.MinVersion
+
+		fmt.Printf("\n[dep] %s 설치 중...\n", depSlug)
+
+		depScript, scriptErr := client.GetInstallScript(depSlug, depVersion, strategy)
+		if scriptErr == nil {
+			if runErr := runScriptFlow(depScript, depSlug, depVersion); runErr != nil {
+				fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
+				// continue with other deps — don't abort
+			} else {
+				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
+			}
+		} else if errors.Is(scriptErr, hub.ErrNotFound) {
+			// Fallback: local BuildCommand
+			depPkg, fetchErr := client.GetPackage(depSlug)
+			if fetchErr != nil {
+				fmt.Printf("⚠ dep '%s' 패키지 정보 조회 실패: %v\n", depSlug, fetchErr)
+				continue
+			}
+			command := installer.BuildCommand(depPkg.Type, strategy, depSlug, depVersion)
+			fmt.Printf("실행: %s\n", strings.Join(command, " "))
+			if runErr := installer.Run(command, os.Stdout); runErr != nil {
+				fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
+			} else {
+				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
+			}
+		} else {
+			fmt.Printf("⚠ dep '%s' script 조회 실패: %v\n", depSlug, scriptErr)
+		}
+	}
+
+	return groupID, nil
 }
 
 // runScriptFlow previews, confirms, and executes the hub-provided install script.

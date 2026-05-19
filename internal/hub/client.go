@@ -129,6 +129,8 @@ func (c *Client) RecordInstall(slug, version, strategy, groupID, source string) 
 		PackageSlug:    slug,
 		Version:        version,
 		Strategy:       strategy,
+		OS:             OS(),
+		Arch:           Arch(),
 		InstallGroupID: groupID,
 		InstallSource:  source,
 	}
