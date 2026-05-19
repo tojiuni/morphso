@@ -89,7 +89,7 @@ func TestClient_RecordInstall(t *testing.T) {
 	defer srv.Close()
 
 	client := hub.NewClient(srv.URL, "tok")
-	err := client.RecordInstall("gopedia", "1.0.0", "native")
+	_, err := client.RecordInstall("gopedia", "1.0.0", "native", "", "user")
 	require.NoError(t, err)
 }
 

@@ -141,7 +141,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if cfg.Token != "" {
-			_ = client.RecordInstall(slug, version, strategy)
+			_, _ = client.RecordInstall(slug, version, strategy, "", "user")
 		}
 		return nil
 	}
@@ -156,7 +156,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("설치 실패: %w", err)
 	}
 	if cfg.Token != "" {
-		_ = client.RecordInstall(slug, version, strategy)
+		_, _ = client.RecordInstall(slug, version, strategy, "", "user")
 	}
 	fmt.Printf("\n✓ '%s' 설치 완료!\n", slug)
 	return nil

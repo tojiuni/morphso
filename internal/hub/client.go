@@ -122,17 +122,36 @@ func (c *Client) Recommend(slug string, s *spec.Spec, preferred string) (*Recomm
 	return &result, nil
 }
 
-func (c *Client) RecordInstall(slug, version, strategy string) error {
+// RecordInstall records an install and returns the new record ID.
+// groupID and source are optional ("" = omit from request body via omitempty).
+func (c *Client) RecordInstall(slug, version, strategy, groupID, source string) (string, error) {
 	body := InstallRequest{
-		PackageSlug: slug,
-		Version:     version,
-		Strategy:    strategy,
+		PackageSlug:    slug,
+		Version:        version,
+		Strategy:       strategy,
+		InstallGroupID: groupID,
+		InstallSource:  source,
 	}
 	req, err := c.newRequest(http.MethodPost, "/installs", body)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return c.do(req, nil)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("server error: %s", resp.Status)
+	}
+	var result InstallRecordID
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", nil // best-effort
+	}
+	return result.ID, nil
 }
 
 func (c *Client) GetInstallScript(slug, version, strategy string) (*InstallScript, error) {
@@ -187,6 +206,18 @@ func (c *Client) GetInstalls() ([]InstallRecord, error) {
 		records = []InstallRecord{}
 	}
 	return records, nil
+}
+
+func (c *Client) GetDependencies(slug string) (*DependencyResponse, error) {
+	req, err := c.newRequest(http.MethodGet, "/packages/"+slug+"/dependencies", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result DependencyResponse
+	if err := c.do(req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // LocalRecommend applies rule-based logic locally (same rules as morphso-hub) for offline/unauthenticated use.
