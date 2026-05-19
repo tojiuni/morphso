@@ -150,7 +150,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// 6. Hub에서 install script 조회 → 없으면 로컬 BuildCommand fallback
 	installScript, err := client.GetInstallScript(slug, version, strategy)
 	if err == nil {
-		if err := runScriptFlow(installScript, slug, version); err != nil {
+		if err := runScriptFlow(installScript, slug, version, specEnv(s)); err != nil {
 			return err
 		}
 		if cfg.Token != "" {
@@ -281,7 +281,7 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 
 		depScript, scriptErr := client.GetInstallScript(depSlug, depVersion, strategy)
 		if scriptErr == nil {
-			if runErr := runScriptFlow(depScript, depSlug, depVersion); runErr != nil {
+			if runErr := runScriptFlow(depScript, depSlug, depVersion, specEnv(s)); runErr != nil {
 				if !errors.Is(runErr, hub.ErrUserCancelled) {
 					fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
 				}
@@ -311,8 +311,16 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 	return groupID, nil
 }
 
+// specEnv converts a collected Spec into environment variables for inject into install scripts.
+func specEnv(s *spec.Spec) []string {
+	return []string{
+		"MOSO_OS=" + s.OS,
+		"MOSO_ARCH=" + s.Arch,
+	}
+}
+
 // runScriptFlow previews, confirms, and executes the hub-provided install script.
-func runScriptFlow(script *hub.InstallScript, slug, version string) error {
+func runScriptFlow(script *hub.InstallScript, slug, version string, extraEnv []string) error {
 	// SHA256 무결성 검증
 	hash := sha256.Sum256([]byte(script.Script))
 	computed := fmt.Sprintf("sha256:%x", hash)
@@ -365,9 +373,11 @@ func runScriptFlow(script *hub.InstallScript, slug, version string) error {
 	c := exec.Command("sh", tmpFile.Name())
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
+	env := append(os.Environ(), extraEnv...)
 	if installConfig != "" {
-		c.Env = append(os.Environ(), "MOSO_CONFIG="+installConfig)
+		env = append(env, "MOSO_CONFIG="+installConfig)
 	}
+	c.Env = env
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("설치 실패: %w", err)
 	}
