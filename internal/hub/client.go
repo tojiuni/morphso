@@ -213,6 +213,51 @@ func (c *Client) GetInstalls() ([]InstallRecord, error) {
 	return records, nil
 }
 
+func (c *Client) DeletePackage(slug string, cascade, force bool) (*DeleteConflictResponse, error) {
+	path := "/packages/" + url.PathEscape(slug)
+	params := url.Values{}
+	if cascade {
+		params.Set("cascade", "true")
+	}
+	if force {
+		params.Set("force", "true")
+	}
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+	req, err := c.newRequest(http.MethodDelete, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case http.StatusConflict:
+		var conflict DeleteConflictResponse
+		if err := json.NewDecoder(resp.Body).Decode(&conflict); err != nil {
+			return nil, ErrDeleteConflict
+		}
+		return &conflict, ErrDeleteConflict
+	default:
+		if resp.StatusCode >= 400 {
+			body := make([]byte, 256)
+			n, _ := resp.Body.Read(body)
+			return nil, fmt.Errorf("server error: %s: %s", resp.Status, strings.TrimSpace(string(body[:n])))
+		}
+		return nil, nil
+	}
+}
+
 func (c *Client) GetDependencies(slug string) (*DependencyResponse, error) {
 	req, err := c.newRequest(http.MethodGet, "/packages/"+slug+"/dependencies", nil)
 	if err != nil {
