@@ -8,6 +8,12 @@ import (
 var ErrNotFound = errors.New("package not found")
 var ErrUnauthorized = errors.New("unauthorized")
 var ErrUserCancelled = errors.New("user cancelled")
+var ErrDeleteConflict = errors.New("delete conflict: package has dependents")
+
+type DeleteConflictResponse struct {
+	Message    string   `json:"message"`
+	Dependents []string `json:"dependents"`
+}
 
 type Package struct {
 	ID          string   `json:"id"`
