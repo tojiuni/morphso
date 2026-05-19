@@ -1,0 +1,20 @@
+labels:
+  platform: linux/amd64
+
+steps:
+  - name: test
+    image: golang:1.26-alpine
+    commands:
+      - go test ./... -race
+    when:
+      event: [push, pull_request, tag]
+
+  - name: release
+    image: goreleaser/goreleaser:v2
+    commands:
+      - goreleaser release --clean
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    when:
+      event: tag
