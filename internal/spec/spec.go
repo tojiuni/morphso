@@ -90,16 +90,45 @@ func collectMemory() (total, free float64) {
 		}
 		out, err = exec.Command("vm_stat").Output()
 		if err == nil {
+			var pageSize int64 = 4096
+			var freePages, specPages, inactivePages, purgeablePages int64
 			for _, line := range strings.Split(string(out), "\n") {
-				if strings.HasPrefix(line, "Pages free:") {
-					parts := strings.Fields(line)
-					if len(parts) >= 3 {
-						if pages, err := strconv.ParseInt(strings.TrimRight(parts[2], "."), 10, 64); err == nil {
-							free = float64(pages*4096) / (1024 * 1024 * 1024)
+				// header: "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
+				if strings.Contains(line, "page size of") {
+					fields := strings.Fields(line)
+					for i, f := range fields {
+						if f == "of" && i+1 < len(fields) {
+							if v, err := strconv.ParseInt(fields[i+1], 10, 64); err == nil {
+								pageSize = v
+							}
 						}
 					}
 				}
+				parsePages := func(prefix string) int64 {
+					if strings.HasPrefix(line, prefix) {
+						parts := strings.Fields(line)
+						if len(parts) >= 3 {
+							v, _ := strconv.ParseInt(strings.TrimRight(parts[len(parts)-1], "."), 10, 64)
+							return v
+						}
+					}
+					return 0
+				}
+				if v := parsePages("Pages free:"); v > 0 {
+					freePages = v
+				}
+				if v := parsePages("Pages speculative:"); v > 0 {
+					specPages = v
+				}
+				if v := parsePages("Pages inactive:"); v > 0 {
+					inactivePages = v
+				}
+				if v := parsePages("Pages purgeable:"); v > 0 {
+					purgeablePages = v
+				}
 			}
+			// available = free + speculative + inactive + purgeable (all reclaimable)
+			free = float64((freePages+specPages+inactivePages+purgeablePages)*pageSize) / (1024 * 1024 * 1024)
 		}
 	case "linux":
 		data, err := os.ReadFile("/proc/meminfo")
