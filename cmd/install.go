@@ -53,6 +53,11 @@ func init() {
 func runInstall(cmd *cobra.Command, args []string) error {
 	slug, version := hub.ParseSlugVersion(args[0])
 
+	// Single shared stdin reader — multiple bufio.NewReader(os.Stdin) callers
+	// each buffer data from the pipe, causing earlier readers to silently consume
+	// input meant for later prompts.
+	stdinReader := bufio.NewReader(os.Stdin)
+
 	preferred := installStrategy
 	if installNative {
 		preferred = "native"
@@ -115,8 +120,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	if !installYes {
 		fmt.Printf("진행하시겠습니까? [Y/n/native/docker/k8s/helm] ")
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
+		input, _ := stdinReader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		switch input {
 		case "", "y", "yes":
@@ -138,7 +142,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// 5.5. Dependency install flow
-	groupID, err := runDepsFlow(client, slug, version, strategy, s, cfg.Token != "")
+	groupID, optionalEnv, err := runDepsFlow(client, slug, version, strategy, s, cfg.Token != "", stdinReader)
 	if err != nil {
 		return err
 	}
@@ -150,7 +154,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// 6. Hub에서 install script 조회 → 없으면 로컬 BuildCommand fallback
 	installScript, err := client.GetInstallScript(slug, version, strategy)
 	if err == nil {
-		if err := runScriptFlow(installScript, slug, version, specEnv(s)); err != nil {
+		if err := runScriptFlow(installScript, slug, version, append(specEnv(s), optionalEnv...), stdinReader); err != nil {
 			return err
 		}
 		if cfg.Token != "" {
@@ -197,26 +201,36 @@ func computeTotals(plan []hub.DepPlanItem, mainDep hub.DependencyInfo) (memGB, d
 
 // runDepsFlow fetches dependencies, builds a plan, checks resources,
 // shows the plan to the user, confirms, then installs deps sequentially.
-// Returns the install group ID to use for the main package install.
-// If no deps or --no-deps, returns a fresh group ID with no installations.
-// Returns "", nil to signal user cancellation.
-func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spec, hasToken bool) (groupID string, err error) {
+// runDepsFlow installs required deps, prompts for optional deps, and returns
+// the group ID and any extra env vars collected from optional dep choices.
+// Returns ("", nil, nil) to signal user cancellation.
+func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spec, hasToken bool, reader *bufio.Reader) (groupID string, optionalEnv []string, err error) {
 	groupID = newInstallGroupID()
 
 	if installNoDeps {
-		return groupID, nil
+		return groupID, nil, nil
 	}
 
 	// Fetch dependencies
 	depResp, err := client.GetDependencies(slug)
 	if errors.Is(err, hub.ErrNotFound) {
-		return groupID, nil
+		return groupID, nil, nil
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(depResp.Dependencies) == 0 {
-		return groupID, nil
+		return groupID, nil, nil
+	}
+
+	// Split required vs optional
+	var requiredDeps, optDeps []hub.DependencyInfo
+	for _, d := range depResp.Dependencies {
+		if d.Optional {
+			optDeps = append(optDeps, d)
+		} else {
+			requiredDeps = append(requiredDeps, d)
+		}
 	}
 
 	// Fetch install history (best-effort: ignore errors)
@@ -225,25 +239,23 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 		history, _ = client.GetInstalls()
 	}
 
-	// Build plan
-	plan := hub.BuildDependencyPlan(depResp.Dependencies, history)
-
-	// Build mainDep DependencyInfo for resource check
+	// Build plan for required deps only
+	plan := hub.BuildDependencyPlan(requiredDeps, history)
 	mainDep := hub.DependencyInfo{Package: hub.Package{Slug: slug}}
-
-	// Check resources
 	warnings := hub.CheckResources(plan, mainDep, s.MemoryFreeGB, s.DiskFreeGB)
 
-	// Print plan
-	fmt.Printf("\nDependencies:\n")
-	for _, item := range plan {
-		switch item.Action {
-		case hub.DepSkip:
-			fmt.Printf("  ✓ %-20s %s (설치됨, skip)\n", item.Dep.Package.Slug, item.InstalledVersion)
-		case hub.DepUpdate:
-			fmt.Printf("  ↑ %-20s %s → %s (업데이트)\n", item.Dep.Package.Slug, item.InstalledVersion, item.Dep.MinVersion)
-		case hub.DepInstall:
-			fmt.Printf("  + %-20s %s (신규 설치)\n", item.Dep.Package.Slug, item.Dep.MinVersion)
+	// Print required dep plan
+	if len(plan) > 0 {
+		fmt.Printf("\nDependencies:\n")
+		for _, item := range plan {
+			switch item.Action {
+			case hub.DepSkip:
+				fmt.Printf("  ✓ %-20s %s (설치됨, skip)\n", item.Dep.Package.Slug, item.InstalledVersion)
+			case hub.DepUpdate:
+				fmt.Printf("  ↑ %-20s %s → %s (업데이트)\n", item.Dep.Package.Slug, item.InstalledVersion, item.Dep.MinVersion)
+			case hub.DepInstall:
+				fmt.Printf("  + %-20s %s (신규 설치)\n", item.Dep.Package.Slug, item.Dep.MinVersion)
+			}
 		}
 	}
 
@@ -252,24 +264,21 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 	fmt.Printf("\nRequired:  RAM %.0fGB  Disk %.0fGB\n", totalMemNeed, totalDiskNeed)
 	fmt.Printf("Available: RAM %.0fGB  Disk %.0fGB\n", s.MemoryFreeGB, s.DiskFreeGB)
 
-	// Print warnings
 	for _, w := range warnings {
 		fmt.Printf("⚠ %s %.0fGB 부족합니다.\n", w.Kind, w.ShortByGB)
 	}
 
-	// Confirm if warnings exist and not --yes
 	if len(warnings) > 0 && !installYes {
 		fmt.Print("계속 진행할까요? [y/N] ")
-		reader := bufio.NewReader(os.Stdin)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
 			fmt.Println("취소됨.")
-			return "", nil // signal cancel
+			return "", nil, nil
 		}
 	}
 
-	// Install deps sequentially (DepInstall and DepUpdate only)
+	// Install required deps
 	for _, item := range plan {
 		if item.Action == hub.DepSkip {
 			continue
@@ -281,16 +290,14 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 
 		depScript, scriptErr := client.GetInstallScript(depSlug, depVersion, strategy)
 		if scriptErr == nil {
-			if runErr := runScriptFlow(depScript, depSlug, depVersion, specEnv(s)); runErr != nil {
+			if runErr := runScriptFlow(depScript, depSlug, depVersion, specEnv(s), reader); runErr != nil {
 				if !errors.Is(runErr, hub.ErrUserCancelled) {
 					fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
 				}
-				// skip RecordInstall on cancel or failure — continue with other deps
 			} else {
 				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
 			}
 		} else if errors.Is(scriptErr, hub.ErrNotFound) {
-			// Fallback: local BuildCommand
 			depPkg, fetchErr := client.GetPackage(depSlug)
 			if fetchErr != nil {
 				fmt.Printf("⚠ dep '%s' 패키지 정보 조회 실패: %v\n", depSlug, fetchErr)
@@ -308,7 +315,81 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 		}
 	}
 
-	return groupID, nil
+	// Handle optional deps
+	for _, dep := range optDeps {
+		env, installErr := promptOptionalDep(client, dep, strategy, groupID, s, reader)
+		if installErr != nil {
+			fmt.Printf("⚠ optional dep '%s' 처리 실패: %v\n", dep.Package.Slug, installErr)
+		}
+		optionalEnv = append(optionalEnv, env...)
+	}
+
+	return groupID, optionalEnv, nil
+}
+
+// promptOptionalDep shows install/url/token choices for one optional dependency.
+// Returns env vars to inject into the main package's install script.
+func promptOptionalDep(client *hub.Client, dep hub.DependencyInfo, strategy, groupID string, s *spec.Spec, reader *bufio.Reader) ([]string, error) {
+	depSlug := dep.Package.Slug
+	depName := dep.Package.Name
+	if depName == "" {
+		depName = depSlug
+	}
+
+	fmt.Printf("\n[optional] %s — LLM 설정을 선택하세요:\n", depName)
+	fmt.Printf("  [1] %s 신규 설치 (Docker)\n", depName)
+	fmt.Printf("  [2] 기존 %s URL 입력\n", depName)
+	fmt.Printf("  [3] API 토큰 입력 (OpenAI / Anthropic / 기타)\n")
+	fmt.Printf("  [4] 건너뜀\n")
+	fmt.Print("선택 [1-4]: ")
+
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	switch input {
+	case "1":
+		fmt.Printf("\n[dep] %s 설치 중...\n", depSlug)
+		depScript, err := client.GetInstallScript(depSlug, dep.MinVersion, strategy)
+		if err == nil {
+			if runErr := runScriptFlow(depScript, depSlug, dep.MinVersion, specEnv(s), reader); runErr == nil {
+				_, _ = client.RecordInstall(depSlug, dep.MinVersion, strategy, groupID, "dependency")
+				return []string{"OLLAMA_URL=http://localhost:11434"}, nil
+			}
+		} else {
+			fmt.Printf("⚠ %s 스크립트 조회 실패: %v\n", depSlug, err)
+		}
+		return nil, nil
+
+	case "2":
+		fmt.Printf("%s URL 입력 (예: http://localhost:11434): ", depName)
+		url, _ := reader.ReadString('\n')
+		url = strings.TrimSpace(url)
+		if url == "" {
+			fmt.Println("URL이 비어있어 건너뜁니다.")
+			return nil, nil
+		}
+		return []string{"OLLAMA_URL=" + url}, nil
+
+	case "3":
+		fmt.Print("API Provider (openai/anthropic/기타): ")
+		provider, _ := reader.ReadString('\n')
+		provider = strings.TrimSpace(provider)
+		fmt.Print("API Token: ")
+		token, _ := reader.ReadString('\n')
+		token = strings.TrimSpace(token)
+		if provider == "" || token == "" {
+			fmt.Println("입력이 비어있어 건너뜁니다.")
+			return nil, nil
+		}
+		return []string{
+			"LLM_PROVIDER=" + provider,
+			"LLM_API_KEY=" + token,
+		}, nil
+
+	default:
+		fmt.Printf("%s 건너뜀.\n", depName)
+		return nil, nil
+	}
 }
 
 // specEnv converts a collected Spec into environment variables for inject into install scripts.
@@ -320,7 +401,7 @@ func specEnv(s *spec.Spec) []string {
 }
 
 // runScriptFlow previews, confirms, and executes the hub-provided install script.
-func runScriptFlow(script *hub.InstallScript, slug, version string, extraEnv []string) error {
+func runScriptFlow(script *hub.InstallScript, slug, version string, extraEnv []string, reader *bufio.Reader) error {
 	// SHA256 무결성 검증
 	hash := sha256.Sum256([]byte(script.Script))
 	computed := fmt.Sprintf("sha256:%x", hash)
@@ -337,7 +418,6 @@ func runScriptFlow(script *hub.InstallScript, slug, version string, extraEnv []s
 			fmt.Printf("(generated by: %s)\n\n", script.ModelUsed)
 		}
 		fmt.Print("Proceed? [Y/n] ")
-		reader := bufio.NewReader(os.Stdin)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input == "n" || input == "no" {

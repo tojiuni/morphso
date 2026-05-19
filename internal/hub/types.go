@@ -75,6 +75,7 @@ type DependencyInfo struct {
 	Package              Package              `json:"package"`
 	MinVersion           string               `json:"min_version"`
 	Source               string               `json:"source"`
+	Optional             bool                 `json:"optional"`
 	ResourceRequirements ResourceRequirements `json:"resource_requirements"`
 }
 
