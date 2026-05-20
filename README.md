@@ -21,8 +21,8 @@ Download the latest binary from [Releases](https://github.com/tojiuni/morphso/re
 
 ```sh
 # Example for Linux amd64 — replace version and platform as needed
-VERSION=$(curl -fsSL https://api.github.com/repos/tojiuni/morphso/releases/latest | grep '"tag_name"' | sed 's/.*"\(v[^"]*\)".*/\1/')
-curl -fsSL "https://github.com/tojiuni/morphso/releases/download/${VERSION}/morphso_${VERSION}_linux_amd64.tar.gz" | tar -xz
+VERSION=$(curl -fsSL https://api.github.com/repos/tojiuni/morphso/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+curl -fsSL "https://github.com/tojiuni/morphso/releases/download/v${VERSION}/morphso_${VERSION}_linux_amd64.tar.gz" | tar -xz
 sudo mv morphso /usr/local/bin/
 ```
 
@@ -44,6 +44,14 @@ morphso install gopedia        # install — deps resolved automatically
 morphso list                   # installation history
 morphso remove gopedia         # uninstall
 ```
+
+### Example: install gopedia
+
+```sh
+morphso install gopedia
+```
+
+morphso fetches an AI-generated install script, resolves dependencies (PostgreSQL, Qdrant, Redis, TypeDB), and runs everything automatically. See [docs/example-gopedia.md](docs/example-gopedia.md) for strategy options and full details.
 
 ## Commands
 
@@ -74,3 +82,4 @@ Override for a single command: `morphso search foo --hub-url http://localhost:18
 - [Install strategies](docs/install-strategies.md)
 - [Dependency pipeline](docs/dependencies.md)
 - [Configuration](docs/configuration.md)
+- [Example: installing gopedia](docs/example-gopedia.md)
