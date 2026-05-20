@@ -11,6 +11,8 @@ AI service marketplace CLI — search, install, and manage AI-ready services wit
 go install github.com/tojiuni/morphso@latest
 ```
 
+Requires Go 1.21+.
+
 Or download a pre-built binary from [Releases](https://github.com/tojiuni/morphso/releases).
 
 ## Quick Start
@@ -44,6 +46,8 @@ morphso remove gopedia         # uninstall
 hub_url: https://morphso.toji.homes  # override with --hub-url flag
 token:   <set automatically by login>
 ```
+
+Override for a single command: `morphso search foo --hub-url http://localhost:18080`
 
 ## Docs
 
