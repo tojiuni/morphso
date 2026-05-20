@@ -1,12 +1,14 @@
 package hub_test
 
 import (
+	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tojiuni/morphso/internal/hub"
+	"github.com/tojiuni/morphso/internal/spec"
 )
 
 // helpers
@@ -195,4 +197,27 @@ func TestCheckResources_BothShort(t *testing.T) {
 	}
 	assert.True(t, kinds["RAM"])
 	assert.True(t, kinds["Disk"])
+}
+
+// --- RecommendForType tests ---
+
+func TestRecommendForType_MCP_PrefersNativeWhenNpmAvailable(t *testing.T) {
+	if _, err := exec.LookPath("npm"); err != nil {
+		t.Skip("npm not installed")
+	}
+	got := hub.RecommendForType("mcp", &spec.Spec{OS: "darwin", Arch: "arm64"}, "")
+	assert.Equal(t, "native", got)
+}
+
+func TestRecommendForType_RespectPreferred(t *testing.T) {
+	got := hub.RecommendForType("mcp", &spec.Spec{OS: "darwin"}, "docker")
+	assert.Equal(t, "docker", got)
+}
+
+func TestRecommendForType_NonMCPDelegatesToLocalRecommend(t *testing.T) {
+	// Non-mcp behavior should match LocalRecommend output.
+	s := &spec.Spec{OS: "darwin", Arch: "arm64", MemoryFreeGB: 16}
+	want := hub.LocalRecommend(s, "")
+	got := hub.RecommendForType("npm", s, "")
+	assert.Equal(t, want, got)
 }

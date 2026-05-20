@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tojiuni/morphso/internal/config"
 	"github.com/tojiuni/morphso/internal/hub"
+	"github.com/tojiuni/morphso/internal/mcpclient"
 )
 
 var removeCmd = &cobra.Command{
@@ -31,9 +32,16 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	}
 	client := hub.NewClient(cfg.HubURL, cfg.Token)
 
+	// Fetch package metadata to know whether to unregister from MCP clients.
+	// If GetPackage fails, we proceed to delete anyway — hub will surface the error if needed.
+	pkg, getErr := client.GetPackage(slug)
+
 	conflict, err := client.DeletePackage(slug, false, false)
 	if err == nil {
 		fmt.Printf("'%s' 패키지가 삭제되었습니다.\n", slug)
+		if pkg != nil && getErr == nil {
+			unregisterFromClients(pkg, mcpclient.DetectInstalled(), os.Stdout)
+		}
 		return nil
 	}
 	if !errors.Is(err, hub.ErrDeleteConflict) {
@@ -63,12 +71,18 @@ func runRemove(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("cascade 삭제 실패: %w", err)
 		}
 		fmt.Printf("'%s' 및 의존 패키지가 모두 삭제되었습니다.\n", slug)
+		if pkg != nil && getErr == nil {
+			unregisterFromClients(pkg, mcpclient.DetectInstalled(), os.Stdout)
+		}
 	case "2":
 		_, err = client.DeletePackage(slug, false, true)
 		if err != nil {
 			return fmt.Errorf("삭제 실패: %w", err)
 		}
 		fmt.Printf("'%s' 패키지가 삭제되었습니다.\n", slug)
+		if pkg != nil && getErr == nil {
+			unregisterFromClients(pkg, mcpclient.DetectInstalled(), os.Stdout)
+		}
 	default:
 		fmt.Println("취소되었습니다.")
 	}

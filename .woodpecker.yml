@@ -4,7 +4,10 @@ labels:
 steps:
   - name: test
     image: golang:1.26-alpine
+    environment:
+      CGO_ENABLED: "1"
     commands:
+      - apk add --no-cache gcc musl-dev
       - go test ./... -race
     when:
       event: [push, pull_request, tag]
