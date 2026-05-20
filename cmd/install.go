@@ -385,6 +385,16 @@ func promptOptionalDep(client *hub.Client, dep hub.DependencyInfo, strategy, gro
 			return nil, fmt.Errorf("optional dep '%s' 설치 실패: %w", depSlug, runErr)
 		}
 		_, _ = client.RecordInstall(depSlug, dep.MinVersion, strategy, groupID, "dependency")
+		// MCP optional dep → also register with detected MCP clients.
+		// Fetch full package (deps endpoint returns slim metadata; we need MCPMetadata).
+		if dep.Package.Type == "mcp" {
+			if fullPkg, fetchErr := client.GetPackage(depSlug); fetchErr == nil && fullPkg.MCPMetadata != nil {
+				if regErr := runMCPRegistration(fullPkg, strategy, dep.MinVersion, reader, os.Stdout, installYes, installReconfigure); regErr != nil {
+					fmt.Printf("⚠ optional dep '%s' MCP 클라이언트 등록 실패: %v\n", depSlug, regErr)
+				}
+			}
+			return nil, nil
+		}
 		return []string{"OLLAMA_URL=" + defaultOllamaURL}, nil
 
 	case "2":
