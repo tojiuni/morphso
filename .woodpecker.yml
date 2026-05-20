@@ -17,6 +17,10 @@ steps:
     commands:
       - goreleaser release --clean
     environment:
+      # The goreleaser v2.7.0 image bundles Go 1.23.5, but go.mod requires
+      # 1.26.2. GOTOOLCHAIN=auto lets the before-hook (go mod tidy) and the
+      # build fetch the pinned toolchain instead of failing with GOTOOLCHAIN=local.
+      GOTOOLCHAIN: auto
       GITHUB_TOKEN:
         from_secret: github_token
     when:
