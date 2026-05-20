@@ -110,7 +110,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if strategy == "" {
-		strategy = hub.LocalRecommend(s, preferred)
+		strategy = hub.RecommendForType(string(pkg.Type), s, preferred)
 		reason = "로컬 rule-based 추천 (hub 미연결 또는 미로그인)"
 	}
 

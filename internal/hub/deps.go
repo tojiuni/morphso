@@ -1,8 +1,11 @@
 package hub
 
 import (
+	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/tojiuni/morphso/internal/spec"
 )
 
 // DepAction represents what to do with a dependency.
@@ -171,4 +174,23 @@ func CheckResources(plan []DepPlanItem, mainDep DependencyInfo, memFreeGB, diskF
 		return nil
 	}
 	return warnings
+}
+
+// RecommendForType returns a strategy for a given package type.
+// Respects preferred if non-empty. For mcp packages: native(npm) when npm is
+// in PATH, otherwise docker. For other types: delegates to LocalRecommend.
+func RecommendForType(pkgType string, s *spec.Spec, preferred string) string {
+	if preferred != "" {
+		return preferred
+	}
+	if pkgType == "mcp" {
+		if _, err := exec.LookPath("npm"); err == nil {
+			return "native"
+		}
+		if _, err := exec.LookPath("docker"); err == nil {
+			return "docker"
+		}
+		return "native"
+	}
+	return LocalRecommend(s, preferred)
 }
