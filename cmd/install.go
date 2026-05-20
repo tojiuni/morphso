@@ -187,6 +187,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	if err := installer.Run(command, os.Stdout); err != nil {
 		return fmt.Errorf("설치 실패: %w", err)
 	}
+	// MCP client registration on the fallback path too — same gating/UX as the
+	// hub-script path so mcp+native without a hub script still gets registered.
+	if pkg.Type == "mcp" {
+		if regErr := runMCPRegistration(pkg, strategy, version, stdinReader, os.Stdout, installYes, installReconfigure); regErr != nil {
+			fmt.Printf("⚠ MCP 클라이언트 자동 등록 실패: %v\n", regErr)
+			if pkg.MCPMetadata != nil {
+				fmt.Printf("  (수동 등록: 'claude mcp add-json %s ...' 또는 ~/.cursor/mcp.json / ~/.gemini/settings.json 편집)\n", pkg.MCPMetadata.ServerName)
+			}
+		}
+	}
 	if cfg.Token != "" {
 		_, _ = client.RecordInstall(slug, version, strategy, groupID, "user")
 	}

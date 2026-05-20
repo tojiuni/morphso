@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/tojiuni/morphso/internal/hub"
 	"github.com/tojiuni/morphso/internal/mcpclient"
 )
@@ -138,8 +140,10 @@ func collectEnv(schema []hub.MCPEnvSpec, existing map[string]string, reader *buf
 		} else {
 			fmt.Fprintf(out, "%s: ", prompt)
 		}
-		raw, _ := reader.ReadString('\n')
-		raw = strings.TrimRight(raw, "\r\n")
+		raw, err := readEnvInput(reader, e.Secret)
+		if err != nil {
+			return nil, err
+		}
 		if raw == "" {
 			raw = defaultVal
 		}
@@ -151,6 +155,22 @@ func collectEnv(schema []hub.MCPEnvSpec, existing map[string]string, reader *buf
 		}
 	}
 	return collected, nil
+}
+
+// readEnvInput reads one line of input. For secret fields, it disables terminal
+// echo via term.ReadPassword when stdin is a tty; otherwise it reads from the
+// supplied reader (so tests with piped stdin still work).
+func readEnvInput(reader *bufio.Reader, secret bool) (string, error) {
+	if secret && term.IsTerminal(int(os.Stdin.Fd())) {
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintln(os.Stderr) // newline after no-echo input
+		return strings.TrimRight(string(b), "\r\n"), nil
+	}
+	raw, _ := reader.ReadString('\n')
+	return strings.TrimRight(raw, "\r\n"), nil
 }
 
 // buildEntry constructs the MCPServerEntry for the chosen strategy
