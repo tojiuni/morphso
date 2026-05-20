@@ -19,15 +19,16 @@ import (
 )
 
 var (
-	installStrategy string
-	installYes      bool
-	installNative   bool
-	installDocker   bool
-	installK8s      bool
-	installHelm     bool
-	installTemplate bool
-	installConfig   string
-	installNoDeps   bool
+	installStrategy    string
+	installYes         bool
+	installNative      bool
+	installDocker      bool
+	installK8s         bool
+	installHelm        bool
+	installTemplate    bool
+	installConfig      string
+	installNoDeps      bool
+	installReconfigure bool
 )
 
 var installCmd = &cobra.Command{
@@ -47,6 +48,7 @@ func init() {
 	installCmd.Flags().BoolVar(&installTemplate, "template", false, "config template을 ./<slug>.env로 저장")
 	installCmd.Flags().StringVar(&installConfig, "config", "", "커스텀 config 파일 (MOSO_CONFIG 환경변수로 주입)")
 	installCmd.Flags().BoolVar(&installNoDeps, "no-deps", false, "의존성 설치 없이 main만 설치")
+	installCmd.Flags().BoolVar(&installReconfigure, "reconfigure", false, "MCP 패키지 재설치 시 env를 새로 입력")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -156,6 +158,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		if err := runScriptFlow(installScript, slug, version, append(specEnv(s), optionalEnv...), stdinReader); err != nil {
 			return err
+		}
+		// MCP client registration (only for type=mcp packages). Failure here
+		// does not fail the install — print a manual hint and continue.
+		if pkg.Type == "mcp" {
+			if regErr := runMCPRegistration(pkg, strategy, version, stdinReader, os.Stdout, installYes, installReconfigure); regErr != nil {
+				fmt.Printf("⚠ MCP 클라이언트 자동 등록 실패: %v\n", regErr)
+				if pkg.MCPMetadata != nil {
+					fmt.Printf("  (수동 등록: 'claude mcp add-json %s ...' 또는 ~/.cursor/mcp.json / ~/.gemini/settings.json 편집)\n", pkg.MCPMetadata.ServerName)
+				}
+			}
 		}
 		if cfg.Token != "" {
 			_, _ = client.RecordInstall(slug, version, strategy, groupID, "user")
