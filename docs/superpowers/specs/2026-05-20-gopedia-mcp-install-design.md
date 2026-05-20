@@ -271,9 +271,9 @@ dependencies:
 ```
 
 - gopedia를 required dep로 두면 기존 `runDepsFlow`가 먼저 설치 (or skip if installed).
-- install script (hub LLM 자동 생성 후 검토):
-  - native: `npm install -g gopedia-mcp-server@${MOSO_VERSION:-latest}`
-  - docker: `docker pull artifacts.toji.homes/gopedia-mcp:${MOSO_VERSION:-latest}`
+- install script (hub LLM 자동 생성 후 검토): hub의 install script는 (slug, version, strategy) 단위로 저장되므로 version은 저장 시점에 hub가 스크립트 본문에 박는다. CLI 측 추가 env 주입 불필요.
+  - native: `npm install -g gopedia-mcp-server@<version-or-latest>`
+  - docker: `docker pull artifacts.toji.homes/gopedia-mcp:<version-or-latest>`
 
 ## Migration / Rollout
 
