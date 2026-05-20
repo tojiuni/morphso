@@ -18,6 +18,8 @@ import (
 	"github.com/tojiuni/morphso/internal/spec"
 )
 
+const defaultOllamaURL = "http://localhost:11434"
+
 var (
 	installStrategy    string
 	installYes         bool
@@ -316,27 +318,25 @@ func runDepsFlow(client *hub.Client, slug, version, strategy string, s *spec.Spe
 		depScript, scriptErr := client.GetInstallScript(depSlug, depVersion, strategy)
 		if scriptErr == nil {
 			if runErr := runScriptFlow(depScript, depSlug, depVersion, specEnv(s), reader); runErr != nil {
-				if !errors.Is(runErr, hub.ErrUserCancelled) {
-					fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
+				if errors.Is(runErr, hub.ErrUserCancelled) {
+					return "", nil, hub.ErrUserCancelled
 				}
-			} else {
-				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
+				return "", nil, fmt.Errorf("required dep '%s' 설치 실패: %w", depSlug, runErr)
 			}
+			_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
 		} else if errors.Is(scriptErr, hub.ErrNotFound) {
 			depPkg, fetchErr := client.GetPackage(depSlug)
 			if fetchErr != nil {
-				fmt.Printf("⚠ dep '%s' 패키지 정보 조회 실패: %v\n", depSlug, fetchErr)
-				continue
+				return "", nil, fmt.Errorf("required dep '%s' 패키지 정보 조회 실패: %w", depSlug, fetchErr)
 			}
 			command := installer.BuildCommand(depPkg.Type, strategy, depSlug, depVersion)
 			fmt.Printf("실행: %s\n", strings.Join(command, " "))
 			if runErr := installer.Run(command, os.Stdout); runErr != nil {
-				fmt.Printf("⚠ dep '%s' 설치 실패: %v\n", depSlug, runErr)
-			} else {
-				_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
+				return "", nil, fmt.Errorf("required dep '%s' 설치 실패: %w", depSlug, runErr)
 			}
+			_, _ = client.RecordInstall(depSlug, depVersion, strategy, groupID, "dependency")
 		} else {
-			fmt.Printf("⚠ dep '%s' script 조회 실패: %v\n", depSlug, scriptErr)
+			return "", nil, fmt.Errorf("required dep '%s' script 조회 실패: %w", depSlug, scriptErr)
 		}
 	}
 
@@ -375,15 +375,17 @@ func promptOptionalDep(client *hub.Client, dep hub.DependencyInfo, strategy, gro
 	case "1":
 		fmt.Printf("\n[dep] %s 설치 중...\n", depSlug)
 		depScript, err := client.GetInstallScript(depSlug, dep.MinVersion, strategy)
-		if err == nil {
-			if runErr := runScriptFlow(depScript, depSlug, dep.MinVersion, specEnv(s), reader); runErr == nil {
-				_, _ = client.RecordInstall(depSlug, dep.MinVersion, strategy, groupID, "dependency")
-				return []string{"OLLAMA_URL=http://localhost:11434"}, nil
-			}
-		} else {
-			fmt.Printf("⚠ %s 스크립트 조회 실패: %v\n", depSlug, err)
+		if err != nil {
+			return nil, fmt.Errorf("optional dep '%s' 스크립트 조회 실패: %w", depSlug, err)
 		}
-		return nil, nil
+		if runErr := runScriptFlow(depScript, depSlug, dep.MinVersion, specEnv(s), reader); runErr != nil {
+			if errors.Is(runErr, hub.ErrUserCancelled) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("optional dep '%s' 설치 실패: %w", depSlug, runErr)
+		}
+		_, _ = client.RecordInstall(depSlug, dep.MinVersion, strategy, groupID, "dependency")
+		return []string{"OLLAMA_URL=" + defaultOllamaURL}, nil
 
 	case "2":
 		fmt.Printf("%s URL 입력 (예: http://localhost:11434): ", depName)
