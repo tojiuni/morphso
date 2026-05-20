@@ -180,3 +180,10 @@ func TestRunMCPRegistration_UnregisteredEnvToken_NotInExpansion(t *testing.T) {
 	err := runMCPRegistrationWithClients(pkg, "native", "1", bufio.NewReader(strings.NewReader("")), &bytes.Buffer{}, []mcpclient.MCPClient{&fakeClient{detected: true}}, true, false)
 	assert.Error(t, err)
 }
+
+func TestMCPDockerFallbackErrors(t *testing.T) {
+	err := errorIfMCPFallbackUnsupported("mcp", "docker")
+	assert.ErrorContains(t, err, "hub install script")
+	assert.NoError(t, errorIfMCPFallbackUnsupported("mcp", "native"))
+	assert.NoError(t, errorIfMCPFallbackUnsupported("npm", "docker"))
+}

@@ -181,3 +181,13 @@ func buildEntry(m *hub.MCPMetadata, strategy, version, slug string, env map[stri
 		return mcpclient.MCPServerEntry{}, fmt.Errorf("unsupported strategy %q for mcp", strategy)
 	}
 }
+
+// errorIfMCPFallbackUnsupported guards the install-script fallback path.
+// MCP + docker requires hub-provided install scripts; the local fallback
+// (BuildCommand) produces a wrong/daemon-style docker command for stdio MCP.
+func errorIfMCPFallbackUnsupported(pkgType, strategy string) error {
+	if pkgType == "mcp" && strategy == "docker" {
+		return fmt.Errorf("mcp 타입 + docker 전략은 hub install script가 필요합니다 (fallback 경로 미지원)")
+	}
+	return nil
+}

@@ -179,6 +179,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fallback: local BuildCommand (hub에 스크립트 미등록 패키지)
+	if err := errorIfMCPFallbackUnsupported(pkg.Type, strategy); err != nil {
+		return err
+	}
 	command := installer.BuildCommand(pkg.Type, strategy, slug, version)
 	fmt.Printf("\n실행: %s\n\n", strings.Join(command, " "))
 	if err := installer.Run(command, os.Stdout); err != nil {
