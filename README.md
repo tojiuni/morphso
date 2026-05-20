@@ -7,13 +7,32 @@ AI service marketplace CLI — search, install, and manage AI-ready services wit
 
 ## Install
 
+### One-liner (recommended)
+
+```sh
+curl -fsSL https://morphso.toji.homes/install | sh
+```
+
+Downloads a pre-built binary for your OS/arch (macOS/Linux, amd64/arm64). Falls back to `go install` if no binary is available, and installs Go automatically if needed. PATH is registered for bash/zsh/fish.
+
+### Pre-built binary
+
+Download the latest binary from [Releases](https://github.com/tojiuni/morphso/releases), extract, and place it in your PATH:
+
+```sh
+# Example for Linux amd64 — replace version and platform as needed
+VERSION=$(curl -fsSL https://api.github.com/repos/tojiuni/morphso/releases/latest | grep '"tag_name"' | sed 's/.*"\(v[^"]*\)".*/\1/')
+curl -fsSL "https://github.com/tojiuni/morphso/releases/download/${VERSION}/morphso_${VERSION}_linux_amd64.tar.gz" | tar -xz
+sudo mv morphso /usr/local/bin/
+```
+
+### go install
+
 ```sh
 go install github.com/tojiuni/morphso@latest
 ```
 
 Requires Go 1.21+.
-
-Or download a pre-built binary from [Releases](https://github.com/tojiuni/morphso/releases).
 
 ## Quick Start
 
