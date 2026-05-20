@@ -46,16 +46,7 @@ func DetectInstalled() []MCPClient {
 	return out
 }
 
-// Stubs replaced in B3 (cursor), B4 (gemini), B5 (claude-code).
-// Defining them up-front so this scaffold compiles standalone.
-func newClaudeCode() MCPClient { return &stubClient{name: "claude-code"} }
+// Constructors per client. All three are now implemented (B3/B4/B5).
+func newClaudeCode() MCPClient { return newClaudeCodeReal() }
 func newCursor() MCPClient     { return newCursorReal() }
 func newGeminiCLI() MCPClient  { return newGeminiCLIReal() }
-
-type stubClient struct{ name string }
-
-func (s *stubClient) Name() string                                  { return s.name }
-func (s *stubClient) Detected() bool                                { return false }
-func (s *stubClient) ExistingEntry(string) (*MCPServerEntry, error) { return nil, nil }
-func (s *stubClient) Register(string, MCPServerEntry) error         { return nil }
-func (s *stubClient) Unregister(string) error                       { return nil }
