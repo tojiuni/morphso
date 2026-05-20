@@ -21,7 +21,7 @@ token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 | Method | Scope | Example |
 |--------|-------|---------|
 | `--hub-url <url>` flag | Single command | `morphso search foo --hub-url http://localhost:18080` |
-| `MOSO_CONFIG` env var | Install script execution | Set automatically when `--config <file>` is used |
+| `MOSO_CONFIG` env var | Install script (auto-set) | Carries the `--config <file>` path into the install script environment; not set by the user directly |
 
 ## Self-Hosted Hub
 
