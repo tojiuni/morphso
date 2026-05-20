@@ -120,7 +120,11 @@ func writeJSONConfigAtomic(path string, cfg map[string]any) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
 
 func decodeEntry(raw any) (*MCPServerEntry, error) {
