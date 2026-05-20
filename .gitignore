@@ -21,3 +21,6 @@ go.work.sum
 .vscode/
 *.swp
 *.swo
+
+# Superpowers planning artifacts
+docs/superpowers/

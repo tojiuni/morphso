@@ -90,6 +90,20 @@ func collectMemory() (total, free float64) {
 		}
 		out, err = exec.Command("vm_stat").Output()
 		if err == nil {
+			parsePages := func(line, prefix string) (int64, bool) {
+				if !strings.HasPrefix(line, prefix) {
+					return 0, false
+				}
+				parts := strings.Fields(line)
+				if len(parts) < 3 {
+					return 0, false
+				}
+				v, err := strconv.ParseInt(strings.TrimRight(parts[len(parts)-1], "."), 10, 64)
+				if err != nil {
+					return 0, false
+				}
+				return v, true
+			}
 			var pageSize int64 = 4096
 			var freePages, specPages, inactivePages, purgeablePages int64
 			for _, line := range strings.Split(string(out), "\n") {
@@ -104,26 +118,16 @@ func collectMemory() (total, free float64) {
 						}
 					}
 				}
-				parsePages := func(prefix string) int64 {
-					if strings.HasPrefix(line, prefix) {
-						parts := strings.Fields(line)
-						if len(parts) >= 3 {
-							v, _ := strconv.ParseInt(strings.TrimRight(parts[len(parts)-1], "."), 10, 64)
-							return v
-						}
-					}
-					return 0
-				}
-				if v := parsePages("Pages free:"); v > 0 {
+				if v, ok := parsePages(line, "Pages free:"); ok {
 					freePages = v
 				}
-				if v := parsePages("Pages speculative:"); v > 0 {
+				if v, ok := parsePages(line, "Pages speculative:"); ok {
 					specPages = v
 				}
-				if v := parsePages("Pages inactive:"); v > 0 {
+				if v, ok := parsePages(line, "Pages inactive:"); ok {
 					inactivePages = v
 				}
-				if v := parsePages("Pages purgeable:"); v > 0 {
+				if v, ok := parsePages(line, "Pages purgeable:"); ok {
 					purgeablePages = v
 				}
 			}
