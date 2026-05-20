@@ -50,7 +50,7 @@ func DetectInstalled() []MCPClient {
 // Defining them up-front so this scaffold compiles standalone.
 func newClaudeCode() MCPClient { return &stubClient{name: "claude-code"} }
 func newCursor() MCPClient     { return newCursorReal() }
-func newGeminiCLI() MCPClient  { return &stubClient{name: "gemini-cli"} }
+func newGeminiCLI() MCPClient  { return newGeminiCLIReal() }
 
 type stubClient struct{ name string }
 
