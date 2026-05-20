@@ -2,6 +2,7 @@ package mcpclient
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,8 +50,9 @@ func (c *claudeCodeClient) Register(name string, entry MCPServerEntry) error {
 		if _, err := exec.LookPath("claude"); err == nil {
 			if err := c.registerViaCLI(name, entry); err == nil {
 				return nil
+			} else {
+				fmt.Fprintf(os.Stderr, "claude CLI error: %v — falling back to direct edit of ~/.claude.json\n", err)
 			}
-			// On subprocess failure, fall through to direct edit.
 		}
 	}
 	return c.registerDirect(name, entry)
