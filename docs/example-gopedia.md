@@ -60,35 +60,32 @@ If you already run PostgreSQL, Qdrant, TypeDB, and an embedding/LLM endpoint, in
 # 1. Get the config template (lists the variables gopedia understands)
 morphso install gopedia --template          # writes ./gopedia.env
 
-# 2. Edit ./gopedia.env to point at your services (example)
-cat > gopedia.env <<'EOF'
-# HTTP
-GOPEDIA_HTTP_ADDR=0.0.0.0:8787
-
-# PostgreSQL
-POSTGRES_HOST=postgres.example.svc
-POSTGRES_PORT=5432
-POSTGRES_DB=gopedia
-POSTGRES_USER=gopedia
-POSTGRES_PASSWORD=...
-POSTGRES_SSLMODE=disable
-
-# Qdrant
-QDRANT_HOST=qdrant.example.svc
-QDRANT_PORT=6333
-QDRANT_GRPC_PORT=6334
-QDRANT_API_KEY=...
-
-# TypeDB
-TYPEDB_HOST=typedb.example.svc
-TYPEDB_PORT=1729
-TYPEDB_DATABASE=gopedia
-
-# LLM (Ollama) and embeddings — pick what you run
-OLLAMA_CHAT_URL=http://ollama.example.svc:11434
-OLLAMA_CHAT_MODEL=gemma2:27b
-OPENAI_API_KEY=...           # if embeddings/generation use OpenAI
-EOF
+# 2. Edit ./gopedia.env — fill in the values for your services, for example:
+#
+#   GOPEDIA_HTTP_ADDR=0.0.0.0:8787
+#
+#   POSTGRES_HOST=postgres.example.svc
+#   POSTGRES_PORT=5432
+#   POSTGRES_DB=gopedia
+#   POSTGRES_USER=gopedia
+#   POSTGRES_PASSWORD=...
+#   POSTGRES_SSLMODE=disable
+#
+#   QDRANT_HOST=qdrant.example.svc
+#   QDRANT_PORT=6333
+#   QDRANT_GRPC_PORT=6334
+#   QDRANT_API_KEY=...
+#
+#   REDIS_URL=redis://redis.example.svc:6379
+#
+#   TYPEDB_HOST=typedb.example.svc
+#   TYPEDB_PORT=1729
+#   TYPEDB_DATABASE=gopedia
+#
+#   # LLM / embeddings — pick what you run
+#   OLLAMA_CHAT_URL=http://ollama.example.svc:11434
+#   OLLAMA_CHAT_MODEL=gemma2:27b
+#   OPENAI_API_KEY=...
 
 # 3. Install gopedia only, against those services
 morphso install gopedia --no-deps --config ./gopedia.env --yes
