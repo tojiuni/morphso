@@ -56,7 +56,7 @@ Output columns: `NAME`, `TYPE`, `PRICE`, `DESCRIPTION`. Verified packages are ma
 
 ## info
 
-Show package details: description, type, tags, dependencies, and summed resource requirements (RAM + Disk).
+Show package details: description, type, tags, dependencies, and total RAM and disk requirements.
 
 ```sh
 morphso info <package>
@@ -89,7 +89,7 @@ morphso install <package[@version]> [flags]
 | `--helm` | Shorthand for `--strategy=helm` |
 | `--yes` | Non-interactive mode — skip confirmation prompts |
 | `--no-deps` | Install main package only; skip dependency resolution |
-| `--template` | Save config template to `./<slug>.env` |
+| `--template` | Save config template to `./<package-slug>.env` (e.g., `./gopedia.env`) |
 | `--config <file>` | Inject a custom config file via `MOSO_CONFIG` env var |
 
 **Examples:**
@@ -106,7 +106,11 @@ morphso install gopedia --no-deps        # skip dependency install
 
 ## remove
 
-Uninstall a package and record the removal in hub history. Prompts for confirmation; blocked if other installed packages depend on this one.
+Uninstall a package and record the removal in hub history. If other installed packages depend on this one, morphso shows the dependents and prompts for how to proceed:
+
+- **[1] Cascade** — remove this package and all packages that depend on it
+- **[2] Force** — remove only this package; dependents remain but lose this dependency
+- **[3] Cancel** — abort the removal
 
 ```sh
 morphso remove <package>
@@ -128,4 +132,10 @@ Show installation history for the authenticated user, as recorded by the hub.
 morphso list
 ```
 
-Output columns: `PACKAGE`, `VERSION`, `STRATEGY`, `OS/ARCH`, `INSTALLED AT`.
+**Example output:**
+
+```
+PACKAGE     VERSION  STRATEGY  OS/ARCH        INSTALLED AT
+gopedia     1.2.0    docker    linux/amd64    2026-05-20 10:32:01
+postgresql  15.0     docker    linux/amd64    2026-05-20 10:31:55
+```
