@@ -1,7 +1,6 @@
 # morphso
 
-AI service marketplace CLI — search, install, and manage AI-ready services
-with automatic strategy selection and dependency resolution.
+AI service marketplace CLI — search, install, and manage AI-ready services with automatic strategy selection and dependency resolution.
 
 > Default hub: **https://morphso.toji.homes**  
 > To use your own hub: set `hub_url` in `~/.morphso/config.yaml`.
