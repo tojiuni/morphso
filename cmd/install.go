@@ -155,6 +155,27 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// 5.7. binary + native: download cross-compiled binaries directly from the
+	// artifact-keeper generic repo. This is deterministic, so we bypass the hub's
+	// (LLM-generated) install script entirely.
+	if pkg.Type == "binary" && strategy == "native" {
+		binDir := installer.DefaultBinDir()
+		bi := &installer.BinaryInstaller{}
+		installed, err := bi.InstallBinary(slug, version, binDir, os.Stdout)
+		if err != nil {
+			return fmt.Errorf("binary 설치 실패: %w", err)
+		}
+		fmt.Printf("✓ %s → %s\n", strings.Join(installed, ", "), binDir)
+		if !installer.OnPath(binDir) {
+			fmt.Printf("⚠ %s 가 PATH에 없습니다. 셸 설정에 추가하세요:\n  export PATH=\"%s:$PATH\"\n", binDir, binDir)
+		}
+		if cfg.Token != "" {
+			_, _ = client.RecordInstall(slug, version, strategy, groupID, "user")
+		}
+		fmt.Printf("\n✓ '%s' 설치 완료!\n", slug)
+		return nil
+	}
+
 	// 6. Hub에서 install script 조회 → 없으면 로컬 BuildCommand fallback
 	installScript, err := client.GetInstallScript(slug, version, strategy)
 	if err == nil {
