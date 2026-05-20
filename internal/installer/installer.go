@@ -41,9 +41,15 @@ func buildNative(pkgType, slug, version string) []string {
 			pkg += "@" + version
 		}
 		return []string{"npm", "install", "-g", pkg}
+	case "mcp":
+		pkg := slug
+		if version != "" {
+			pkg += "@" + version
+		}
+		return []string{"npm", "install", "-g", pkg}
 	case "brew":
 		return []string{"brew", "install", slug}
-	case "pip", "mcp", "recipe", "binary", "helm":
+	case "pip", "recipe", "binary", "helm":
 		fallthrough
 	default:
 		pkg := slug

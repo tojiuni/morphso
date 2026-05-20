@@ -23,9 +23,24 @@ func TestBuildCommand_NativeNpm(t *testing.T) {
 }
 
 func TestBuildCommand_NativeMcp(t *testing.T) {
-	// mcp 타입은 pip로 처리
+	// mcp 타입은 npm으로 처리
 	cmd := installer.BuildCommand("mcp", "native", "gopedia", "1.0.0")
-	assert.Equal(t, []string{"pip", "install", "gopedia==1.0.0"}, cmd)
+	assert.Equal(t, []string{"npm", "install", "-g", "gopedia@1.0.0"}, cmd)
+}
+
+func TestBuildCommand_MCP_Native_UsesNpm(t *testing.T) {
+	got := installer.BuildCommand("mcp", "native", "gopedia-mcp", "1.0.0")
+	assert.Equal(t, []string{"npm", "install", "-g", "gopedia-mcp@1.0.0"}, got)
+}
+
+func TestBuildCommand_MCP_NativeNoVersion(t *testing.T) {
+	got := installer.BuildCommand("mcp", "native", "gopedia-mcp", "")
+	assert.Equal(t, []string{"npm", "install", "-g", "gopedia-mcp"}, got)
+}
+
+func TestBuildCommand_PipUnchanged(t *testing.T) {
+	got := installer.BuildCommand("pip", "native", "x", "")
+	assert.Equal(t, []string{"pip", "install", "x"}, got)
 }
 
 func TestBuildCommand_Docker(t *testing.T) {
