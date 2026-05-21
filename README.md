@@ -58,6 +58,9 @@ GOPEDIA_HTTP_PORT=18799 \
 morphso install gopedia --docker --yes
 ```
 
+> **No login required.** `--docker` reads public hub endpoints, so `morphso login`
+> is optional (it only adds hub-tracked install history).
+
 After it finishes:
 
 ```sh
