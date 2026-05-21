@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,7 +16,14 @@ import (
 	"github.com/tojiuni/morphso/internal/mcpclient"
 )
 
-var removeRemote bool
+var (
+	removeRemote bool
+	removeYes    bool
+)
+
+// dockerNameRe extracts the container name from a docker-strategy install
+// script (`docker run ... --name <name> ...`).
+var dockerNameRe = regexp.MustCompile(`--name[=\s]+(\S+)`)
 
 var removeCmd = &cobra.Command{
 	Use:   "remove <package>",
@@ -28,47 +37,78 @@ var removeCmd = &cobra.Command{
 	},
 }
 
-// runRemoveLocal undoes a local install: it unregisters the MCP server from
-// detected clients and deletes the package's docker image(s). The hub
-// registry entry is left intact (use --remote to delete from the hub).
-//
-// Footprint is resolved from hub metadata when reachable (exact MCP server
-// name + image); otherwise it falls back to a slug-based heuristic.
+// purgeLocalFootprint undoes a single package's local install: unregister its
+// MCP server (if any), remove its docker container (parsed from the docker
+// install script's --name), and delete its package-specific (neunexus) images.
+// Cached public base images (postgres, qdrant, …) are preserved.
+func purgeLocalFootprint(client *hub.Client, slug string, out io.Writer) {
+	pkg, _ := client.GetPackage(slug) // best-effort; works offline-degraded
+
+	// MCP client 등록 해제 (mcp 패키지일 때만, 멱등).
+	unregisterFromClients(pkg, mcpclient.DetectInstalled(), out)
+
+	// docker 컨테이너: docker-strategy 설치 스크립트의 --name 을 파싱해 제거.
+	if s, err := client.GetInstallScript(slug, "latest", "docker"); err == nil && s != nil {
+		if m := dockerNameRe.FindStringSubmatch(s.Script); m != nil {
+			for _, a := range localstate.DockerRemoveContainer(m[1]) {
+				fmt.Fprintf(out, "  ✓ %s\n", a)
+			}
+		}
+	}
+
+	// 패키지 전용(neunexus) 이미지만 제거 — 캐시된 public 베이스 이미지는 보존.
+	images := map[string]bool{neunexusRegistry + "/" + slug: true}
+	if pkg != nil && pkg.MCPMetadata != nil && pkg.MCPMetadata.Docker != nil && pkg.MCPMetadata.Docker.Image != "" {
+		images[pkg.MCPMetadata.Docker.Image] = true
+	}
+	for img := range images {
+		for _, a := range localstate.DockerPurge(img) {
+			fmt.Fprintf(out, "  ✓ %s\n", a)
+		}
+	}
+}
+
+// runRemoveLocal undoes a local install (MCP unregister + docker
+// container/image) and, when the package declares dependencies, offers to clean
+// those up too. The hub registry entry is left intact (use --remote to delete).
 func runRemoveLocal(slug string) error {
 	cfg, _ := config.DefaultLoad()
 	if hubURL != "" {
 		cfg.HubURL = hubURL
 	}
 	client := hub.NewClient(cfg.HubURL, cfg.Token)
-	pkg, getErr := client.GetPackage(slug) // best-effort; works offline-degraded
 
 	fmt.Printf("'%s' 로컬 정리 중...\n", slug)
+	purgeLocalFootprint(client, slug, os.Stdout)
 
-	// 1. MCP client 등록 해제 (mcp 패키지일 때만, 멱등).
-	unregisterFromClients(pkg, mcpclient.DetectInstalled(), os.Stdout)
+	// Forward dependencies → offer to clean them up too.
+	if dr, err := client.GetDependencies(slug); err == nil && dr != nil && len(dr.Dependencies) > 0 {
+		fmt.Printf("\n'%s'가 의존하는 패키지:\n", slug)
+		for _, d := range dr.Dependencies {
+			kind := "필수"
+			if d.Optional {
+				kind = "optional"
+			}
+			fmt.Printf("  - %s (%s)\n", d.Package.Slug, kind)
+		}
+		confirm := removeYes
+		if !confirm {
+			fmt.Print("이 의존성들도 함께 로컬 정리할까요? [y/N] ")
+			ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			a := strings.TrimSpace(strings.ToLower(ans))
+			confirm = a == "y" || a == "yes"
+		}
+		if confirm {
+			for _, d := range dr.Dependencies {
+				fmt.Printf("\n— 의존성 '%s' 정리\n", d.Package.Slug)
+				purgeLocalFootprint(client, d.Package.Slug, os.Stdout)
+			}
+		} else {
+			fmt.Println("의존성은 유지합니다.")
+		}
+	}
 
-	// 2. docker 이미지 제거 — 메타데이터 이미지 + slug 휴리스틱.
-	images := map[string]bool{}
-	if pkg != nil && pkg.MCPMetadata != nil && pkg.MCPMetadata.Docker != nil && pkg.MCPMetadata.Docker.Image != "" {
-		images[pkg.MCPMetadata.Docker.Image] = true
-	}
-	images[neunexusRegistry+"/"+slug] = true
-
-	var actions []string
-	for img := range images {
-		actions = append(actions, localstate.DockerPurge(img)...)
-	}
-	for _, a := range actions {
-		fmt.Printf("✓ %s\n", a)
-	}
-
-	if getErr != nil {
-		fmt.Printf("· hub 메타데이터 조회 실패 — slug 휴리스틱으로만 정리했습니다 (%v)\n", getErr)
-	}
-	if len(actions) == 0 {
-		fmt.Printf("· 제거할 docker 이미지 없음 (이미 정리됨이거나 다른 이미지명일 수 있음)\n")
-	}
-	fmt.Printf("'%s' 로컬 정리 완료. (hub 레지스트리는 유지됨 — 전역 삭제는 --remote)\n", slug)
+	fmt.Printf("\n'%s' 로컬 정리 완료. (hub 레지스트리는 유지됨 — 전역 삭제는 --remote)\n", slug)
 	return nil
 }
 
@@ -140,5 +180,6 @@ func runRemoveRemote(slug string) error {
 
 func init() {
 	removeCmd.Flags().BoolVar(&removeRemote, "remote", false, "hub 레지스트리에서 전역 삭제 (기본은 로컬 정리)")
+	removeCmd.Flags().BoolVarP(&removeYes, "yes", "y", false, "의존성 정리 프롬프트 자동 승인")
 	rootCmd.AddCommand(removeCmd)
 }
