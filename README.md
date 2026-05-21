@@ -45,13 +45,52 @@ morphso list                   # installation history
 morphso remove gopedia         # uninstall
 ```
 
-### Example: install gopedia
+### Example: install gopedia (Docker)
+
+The `--docker` strategy brings up a **self-contained Compose stack** — `gopedia` plus its
+datastores (PostgreSQL, Qdrant, TypeDB) on one network. You do **not** provision the
+datastores yourself; the stack does it, and the DB schema is auto-initialized on first start.
 
 ```sh
-morphso install gopedia
+# OPENAI_API_KEY is required (embeddings for ingest + semantic search).
+OPENAI_API_KEY=sk-... \
+GOPEDIA_HTTP_PORT=18799 \
+morphso install gopedia --docker --yes
 ```
 
-morphso fetches an AI-generated install script, resolves dependencies (PostgreSQL, Qdrant, Redis, TypeDB), and runs everything automatically. See [docs/example-gopedia.md](docs/example-gopedia.md) for strategy options and full details.
+After it finishes:
+
+```sh
+curl -s http://127.0.0.1:18799/api/health        # all deps ok
+```
+
+**Providing OPENAI_API_KEY** (pick one — the install warns if it is missing):
+
+```sh
+# 1) config template (recommended for --yes)
+morphso install gopedia --docker --template       # writes ./gopedia.env from the hub template
+#   edit gopedia.env → set OPENAI_API_KEY=sk-...
+morphso install gopedia --docker --yes --config gopedia.env
+
+# 2) environment variable
+OPENAI_API_KEY=sk-... morphso install gopedia --docker --yes
+```
+
+Without a key, ingest runs but stores no vectors (Qdrant stays empty) and search fails.
+
+**Useful env vars** (passed through to the generated Compose):
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `OPENAI_API_KEY` | — | **Required.** Embeddings for ingest + search. |
+| `GOPEDIA_HTTP_PORT` | `8787` | Host port for the gopedia API. |
+| `GOPEDIA_LOG_LEVEL` | `info` | `debug` for verbose logs. |
+| `GOPEDIA_DB_AUTO_INIT` | `true` | Create the DB schema on start (idempotent). |
+| `GOPEDIA_INGEST_DIR` | `~/.morphso/gopedia/ingest` | Host dir mounted at the container's `/ingest`. |
+
+Ingest uses **container paths**: place files under `$GOPEDIA_INGEST_DIR` and ingest
+`/ingest/<subdir>`. See [docs/example-gopedia.md](docs/example-gopedia.md) for k8s/native
+strategies and full details.
 
 ## Commands
 
