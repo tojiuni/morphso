@@ -166,6 +166,26 @@ func DockerPurge(repo string) []string {
 	return actions
 }
 
+// DockerRemoveContainer force-removes a container by exact name (used to undo a
+// docker-strategy install). It does NOT touch the underlying image, so cached
+// public base images (postgres, qdrant, …) are preserved.
+func DockerRemoveContainer(name string) []string {
+	if name == "" {
+		return nil
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		return nil
+	}
+	ids := dockerLines("ps", "-aq", "--filter", "name=^"+name+"$")
+	if len(ids) == 0 {
+		return nil
+	}
+	if exec.Command("docker", append([]string{"rm", "-f"}, ids...)...).Run() == nil {
+		return []string{"컨테이너 제거: " + name}
+	}
+	return nil
+}
+
 func dockerLines(args ...string) []string {
 	out, err := exec.Command("docker", args...).Output()
 	if err != nil {
