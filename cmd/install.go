@@ -106,7 +106,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	// 3. strategy 추천
 	var strategy, reason string
-	if cfg.Token != "" {
+	if preferred != "" {
+		// 사용자가 strategy를 명시(--docker 등)했으면 추천/로그인이 불필요하다.
+		// 이 경로는 hub 연결·로그인 없이도 그대로 동작한다.
+		strategy = preferred
+		reason = "사용자 지정 (--" + preferred + ")"
+	} else if cfg.Token != "" {
 		result, err := client.Recommend(slug, s, preferred)
 		if err == nil {
 			strategy = result.Strategy
