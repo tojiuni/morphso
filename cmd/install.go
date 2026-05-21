@@ -387,10 +387,17 @@ func promptOptionalDep(client *hub.Client, dep hub.DependencyInfo, strategy, gro
 	fmt.Printf("  [2] 기존 %s URL 입력\n", depName)
 	fmt.Printf("  [3] API 토큰 입력 (OpenAI / Anthropic / 기타)\n")
 	fmt.Printf("  [4] 건너뜀\n")
-	fmt.Print("선택 [1-4]: ")
 
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
+	var input string
+	if installYes {
+		// 비대화형(--yes): optional dep도 [1] 신규 설치(Docker)로 자동 선택.
+		input = "1"
+		fmt.Println("선택 [1-4]: 1 (--yes: 신규 설치 자동 선택)")
+	} else {
+		fmt.Print("선택 [1-4]: ")
+		in, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(in)
+	}
 
 	switch input {
 	case "1":

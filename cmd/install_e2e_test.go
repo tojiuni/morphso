@@ -228,8 +228,8 @@ func TestInstallE2E_OptionalDep_UserInstalls(t *testing.T) {
 
 	seedHome(t, h.URL)
 	saveInstallFlags(t)
-	installYes = true
-	redirectStdin(t, "1\n") // [1] install
+	installYes = false // interactive: 사용자가 [1] 직접 선택
+	redirectStdin(t, "y\n1\n") // strategy 확인 y → 옵션 [1] install
 
 	require.NoError(t, runInstall(installCmd, []string{"gopedia"}))
 	assert.Contains(t, h.recorded, "ollama")
@@ -250,8 +250,8 @@ func TestInstallE2E_OptionalDep_UserProvidesURL(t *testing.T) {
 
 	seedHome(t, h.URL)
 	saveInstallFlags(t)
-	installYes = true
-	redirectStdin(t, "2\nhttp://custom:11434\n") // [2] URL → http://custom:11434
+	installYes = false // interactive: 사용자가 [2] URL 직접 입력
+	redirectStdin(t, "y\n2\nhttp://custom:11434\n") // strategy 확인 y → 옵션 [2] URL
 
 	require.NoError(t, runInstall(installCmd, []string{"gopedia"}))
 	assert.Contains(t, h.recorded, "gopedia")
@@ -272,10 +272,35 @@ func TestInstallE2E_OptionalDep_UserSkips(t *testing.T) {
 
 	seedHome(t, h.URL)
 	saveInstallFlags(t)
-	installYes = true
-	redirectStdin(t, "4\n") // [4] skip
+	installYes = false // interactive: 사용자가 [4] 건너뜀 직접 선택
+	redirectStdin(t, "y\n4\n") // strategy 확인 y → 옵션 [4] skip
 
 	require.NoError(t, runInstall(installCmd, []string{"gopedia"}))
 	assert.Contains(t, h.recorded, "gopedia")
 	assert.NotContains(t, h.recorded, "ollama")
+}
+
+// TestInstallE2E_OptionalDep_YesAutoInstalls verifies that with --yes (installYes),
+// an optional dep is auto-selected as [1] (install) WITHOUT reading stdin — the
+// non-interactive flow must not block on the "선택 [1-4]:" prompt.
+func TestInstallE2E_OptionalDep_YesAutoInstalls(t *testing.T) {
+	h := newE2EHub(t)
+	h.pkgs["gopedia"] = hub.Package{Slug: "gopedia", Name: "Gopedia", Type: "binary"}
+	h.pkgs["ollama"] = hub.Package{Slug: "ollama", Name: "Ollama", Type: "binary"}
+	h.scripts["gopedia"] = e2eScript(e2eOkScript)
+	h.scripts["ollama"] = e2eScript(e2eOkScript)
+	h.deps["gopedia"] = hub.DependencyResponse{
+		Dependencies: []hub.DependencyInfo{
+			{Package: hub.Package{Slug: "ollama", Name: "Ollama"}, MinVersion: "latest", Optional: true},
+		},
+	}
+
+	seedHome(t, h.URL)
+	saveInstallFlags(t)
+	installYes = true
+	// no redirectStdin: --yes must NOT block on stdin for the optional choice
+
+	require.NoError(t, runInstall(installCmd, []string{"gopedia"}))
+	assert.Contains(t, h.recorded, "ollama", "optional dep auto-installed under --yes")
+	assert.Contains(t, h.recorded, "gopedia")
 }
